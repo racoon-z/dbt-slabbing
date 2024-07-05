@@ -8,3 +8,4 @@ We will provide the data mapping used in our study, to make it easily reproducib
 To the best of our knowledge, we are the first study exploring DBT from the EA1141
 public dataset. To this end, we give detailed information about the data strategy.
 
+(The fully detailed description and clean mapping are coming soon)
