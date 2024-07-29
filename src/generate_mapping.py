@@ -15,14 +15,16 @@ def read_csv_file(path, encoding=None):
 
 def find_all_image_files(image_root: os.path) -> list:
     file_paths = []
-    for root, dirs, files in os.walk(image_root):
-        for file_path in files:
+    for patient_root in os.listdir(image_root):
+        # Select the last study per patient for reconciliation with year0 outcome ground truths
+        studies_date = [study_date for study_date in os.listdir(os.path.join(image_root, patient_root))]
+        study_date = min(studies_date)
+        for file_ in os.listdir(os.path.join(image_root, patient_root, study_date)):
+            file_path = os.path.join(image_root, patient_root, study_date, file_)
             if file_path.endswith('.dcm'):
                 # Append dicom files (FFDMs, DBTs, and MRIs) into the file_paths list
-                file_paths.append(os.path.join(root, file_path))
-                break
-        if len(file_paths) > 5:
-            break
+                file_paths.append(file_path)
+
     return file_paths
 
 
@@ -36,8 +38,10 @@ def get_truth_labels(subject_de: str, laterality: str, root_csv: os.path):
     # Load the global DBT & MRI BIRADS scores per subject
     global_birads = get_global_birads_per_subject(root_csv=root_csv)
     dbt_birads, mri_birads = global_birads[subject_de]['DBT_BIRADS'], global_birads[subject_de]['MRI_BIRADS']
-    year0_dbt_outcomes = read_csv_file(os.path.join(root_csv, 'ea1141_year0_tomolesions_outcome.csv'))
-    year0_mri_outcomes = read_csv_file(os.path.join(root_csv, 'ea1141_year0_mrilesions_outcome.csv'))
+    year0_dbt_outcomes = read_csv_file(path=os.path.join(root_csv,
+                                                         'EA1141-Reviewed-Clinical-Data-and-Data-Dictionaries/ea1141_year0_tomolesions_outcome.csv'))
+    year0_mri_outcomes = read_csv_file(path=os.path.join(root_csv,
+                                                         'EA1141-Reviewed-Clinical-Data-and-Data-Dictionaries/ea1141_year0_mrilesions_outcome.csv'))
     # Get column position of BreastLaterality and BiopsyOutcome in csv files
     dbt_header, mri_header = year0_dbt_outcomes[0].split(','), year0_mri_outcomes[0].split(',')
     indices = {
@@ -92,7 +96,8 @@ def get_truth_labels(subject_de: str, laterality: str, root_csv: os.path):
 
 def get_global_birads_per_subject(root_csv: os.path) -> dict:
     mapping_per_subject = {}
-    year0_screening_derived = read_csv_file(os.path.join(root_csv, 'ea1141_year0_screening_derived.csv'))
+    year0_screening_derived = read_csv_file(path=os.path.join(root_csv,
+                                                              'EA1141-Reviewed-Clinical-Data-and-Data-Dictionaries/ea1141_year0_screening_derived.csv'))
     header_split = year0_screening_derived[0].split(',')
     for line in year0_screening_derived[1:]:
         _subject_de = line.split(',')[-1]
@@ -103,22 +108,31 @@ def get_global_birads_per_subject(root_csv: os.path) -> dict:
     return mapping_per_subject
 
 
-def get_ea1141_dbt_mapping(image_root: os.path, root_csv: os.path) -> dict:
+def get_ea1141_dbt_mapping(image_root: os.path, root_csv: os.path, verbose: bool = True) -> dict:
     # DBT are mapped with the SOPInstanceUID
     dbt_mapping = {}
     paths = find_all_image_files(image_root=image_root)
-    for image_path in paths:
+    for i_path, image_path in enumerate(paths):
         ds = pydicom.dcmread(image_path)
         image_array = ds.pixel_array
-        if ds.Modality == 'MG' and len(image_array.shape) == 3:
-            # We eliminate MRI exams and find slabbed DBT, i.e., having a SliceThickness = 10mm
-            # In many cases, this dicom tag is not present
-            # We consider image as DBT if SliceThickness is None or 1
+        if ds.Modality == 'MG' and len(image_array.shape) == 3 and ('Projection' not in ds.SeriesDescription):
+            # First condition, verify the following criteria:
+            # - Images must be 3D format, i.e., have 3 dimensions
+            # - Be conform to the 'MG' modality tag
+            # - Do not contain 'Projection' word in the SeriesDescription tags. Those cases are projected views,
+            # resulting in DBTs with 15 slices
             try:
                 SliceThickness = int(ds.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence[0].SliceThickness)
             except:
                 SliceThickness = None
-            if SliceThickness != 10:
+            try:
+                ViewModifier = ds.ViewCodeSequence[0].ViewModifierCodeSequence[0].CodeMeaning
+            except:
+                ViewModifier = None
+            # We eliminate MRI exams and find slabbed DBT, i.e., having a SliceThickness = 10mm
+            # In many cases, this dicom tag is not present, so we keep cases with 1 or None value and exclude only 10mm
+            # Dicom images containing the tag 'Spot Compression' are skipped
+            if SliceThickness != 10 and ViewModifier != 'Spot Compression':
                 PatientID, StudyUID, SeriesUID = ds.PatientID, ds.StudyInstanceUID, ds.SeriesInstanceUID
                 try:
                     FrameLaterality = ds.SharedFunctionalGroupsSequence[0].FrameAnatomySequence[0].FrameLaterality
@@ -136,15 +150,19 @@ def get_ea1141_dbt_mapping(image_root: os.path, root_csv: os.path) -> dict:
                     'Subject_DE': Subject_DE, 'DBT_BIRADS': dbt_birads, 'MRI_BIRADS': mri_birads,
                     'DBT_Outcome': dbt_outcome, 'MRI_Outcome': mri_outcome
                 }
+        if verbose:
+            print(f"{i_path}/{len(paths)}")
 
     return dbt_mapping
 
 
-# These two root paths must be replaced with your specific paths
-# root_images = os.path.join("/datacollection-stash/data-curation/inbox/curated/EA1141/MG/")
-root_images = os.path.join("//10.0.10.3/stash/data-curation/inbox/curated/EA1141/MG/")
-csv_root = os.path.join("C:/Users/PaulTerrassin/paul-terrassin-shared-space/dbt/EA1141-Reviewed-Clinical-Data-and-Data-Dictionaries/")
+if __name__ == '__main__':
+    # These two root paths must be replaced with your specific paths
+    # root_images = os.path.join("//10.0.10.3/stash/data-curation/inbox/curated/EA1141/MG/")
+    # csv_root = os.path.join("/dbt/EA1141-Reviewed-Clinical-Data-and-Data-Dictionaries/")
+    root_images = "/scratch/nautilus/users/e19b382l@univ-nantes.fr/DBT/EA1141/"
+    csv_root = "/home/e19b382l@univ-nantes.fr/paul-terrassin-shared-space/dbt/"
 
-mapping = get_ea1141_dbt_mapping(image_root=root_images, root_csv=csv_root)
-with open('ea1141-mapping.json', 'w') as file:
-    json.dump(mapping, file, indent=4)
+    mapping = get_ea1141_dbt_mapping(image_root=root_images, root_csv=csv_root)
+    with open('/home/e19b382l@univ-nantes.fr/paul-terrassin-shared-space/dbt/ea1141-mapping.json', 'w') as file:
+        json.dump(mapping, file, indent=4)
