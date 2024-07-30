@@ -27,15 +27,15 @@ E.g., EA1141 -> EA1141-9011509 -> 19450327 -> 1.3.6.1.4.1.14519.5.2.1.1620.1225.
 
 ```
 EA1141  
-├── EA1141-\<PatientID:1>  
-│   ├── \<StuyDate:1>  
-│   │   ├── \<SOPInstanceUID:1>   
+├── EA1141-<PatientID:1>  
+│   ├── <StuyDate:1>  
+│   │   ├── <SOPInstanceUID:1>   
 │   │   ├── ...  
-│   │   └── \<SOPInstanceUID:X>  
+│   │   └── <SOPInstanceUID:X>  
 │   ├── ...  
-│   └── \<StuyDate:M>  
+│   └── <StuyDate:M>  
 ├── ...  
-└── EA1141-\<PatientID:N>
+└── EA1141-<PatientID:N>
 ```
 
 ### Python scripts
