@@ -164,5 +164,6 @@ if __name__ == '__main__':
     csv_root = "/home/e19b382l@univ-nantes.fr/paul-terrassin-shared-space/dbt/"
 
     mapping = get_ea1141_dbt_mapping(image_root=root_images, root_csv=csv_root)
+    # Save the mapping dictionary into a json file
     with open('/home/e19b382l@univ-nantes.fr/paul-terrassin-shared-space/dbt/ea1141-mapping.json', 'w') as file:
         json.dump(mapping, file, indent=4)
